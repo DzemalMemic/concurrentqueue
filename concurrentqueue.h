@@ -272,6 +272,22 @@ namespace moodycamel { namespace details {
  #endif // TSAN
 #endif // TSAN
 
+// TSAN observes the existing fence synchronization through the participating atomics.
+#if defined(__SANITIZE_THREAD__)
+#define MOODYCAMEL_TSAN_ENABLED
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define MOODYCAMEL_TSAN_ENABLED
+#endif
+#endif
+#ifdef MOODYCAMEL_TSAN_ENABLED
+#define MOODYCAMEL_TSAN_ACQUIRE std::memory_order_acquire
+#define MOODYCAMEL_TSAN_RELEASE std::memory_order_release
+#else
+#define MOODYCAMEL_TSAN_ACQUIRE std::memory_order_relaxed
+#define MOODYCAMEL_TSAN_RELEASE std::memory_order_relaxed
+#endif
+
 // Compiler-specific likely/unlikely hints
 namespace moodycamel { namespace details {
 #if defined(__GNUC__)
@@ -1594,7 +1610,7 @@ private:
 			MOODYCAMEL_CONSTEXPR_IF (context == explicit_context && BLOCK_SIZE <= EXPLICIT_BLOCK_EMPTY_COUNTER_THRESHOLD) {
 				// Check flags
 				for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-					if (!emptyFlags[i].load(std::memory_order_relaxed)) {
+					if (!emptyFlags[i].load(MOODYCAMEL_TSAN_ACQUIRE)) {
 						return false;
 					}
 				}
@@ -1605,7 +1621,7 @@ private:
 			}
 			else {
 				// Check counter
-				if (elementsCompletelyDequeued.load(std::memory_order_relaxed) == BLOCK_SIZE) {
+				if (elementsCompletelyDequeued.load(MOODYCAMEL_TSAN_ACQUIRE) == BLOCK_SIZE) {
 					std::atomic_thread_fence(std::memory_order_acquire);
 					return true;
 				}
@@ -1643,7 +1659,7 @@ private:
 				i = BLOCK_SIZE - 1 - static_cast<size_t>(i & static_cast<index_t>(BLOCK_SIZE - 1)) - count + 1;
 				for (size_t j = 0; j != count; ++j) {
 					assert(!emptyFlags[i + j].load(std::memory_order_relaxed));
-					emptyFlags[i + j].store(true, std::memory_order_relaxed);
+					emptyFlags[i + j].store(true, MOODYCAMEL_TSAN_RELEASE);
 				}
 				return false;
 			}
